@@ -2,11 +2,11 @@ mod metadata_store;
 mod notification_store;
 
 use crate::JobSchedulerError;
+use deadpool_postgres::{Manager, ManagerConfig, Pool, RecyclingMethod};
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
-use tokio::sync::RwLock;
-use tokio_postgres::{Client, NoTls};
+use std::str::FromStr;
+use tokio_postgres::{Config, NoTls};
 use tracing::error;
 
 pub use metadata_store::PostgresMetadataStore;
@@ -15,7 +15,7 @@ pub use notification_store::PostgresNotificationStore;
 #[derive(Clone)]
 pub enum PostgresStore {
     Created(String),
-    Inited(Arc<RwLock<Client>>),
+    Inited(Pool),
 }
 
 impl PostgresStore {
@@ -84,20 +84,32 @@ impl PostgresStore {
                         feature = "postgres-openssl"
                     )))]
                     let tls = NoTls;
-                    let connect = tokio_postgres::connect(&*url, tls).await;
-                    if let Err(e) = connect {
+
+                    let config = Config::from_str(&url).map_err(|e| {
+                        error!("Error parsing postgres config {:?}", e);
+                        JobSchedulerError::CantInit
+                    })?;
+                    let manager = Manager::from_config(
+                        config,
+                        tls,
+                        ManagerConfig {
+                            recycling_method: RecyclingMethod::Verified,
+                        },
+                    );
+                    let pool = Pool::builder(manager).max_size(4).build().map_err(|e| {
+                        error!("Error creating postgres pool {:?}", e);
+                        JobSchedulerError::CantInit
+                    })?;
+
+                    let client = pool.get().await.map_err(|e| {
                         error!("Error connecting to postgres {:?}", e);
-                        return Err(JobSchedulerError::CantInit);
-                    }
-                    let (client, connection) = connect.unwrap();
-                    tokio::spawn(async move {
-                        if let Err(e) = connection.await {
-                            error!("Error with Postgres Connection {:?}", e);
-                        }
-                    });
-                    Ok(PostgresStore::Inited(Arc::new(RwLock::new(client))))
+                        JobSchedulerError::CantInit
+                    })?;
+                    drop(client);
+
+                    Ok(PostgresStore::Inited(pool))
                 }
-                PostgresStore::Inited(client) => Ok(PostgresStore::Inited(client)),
+                PostgresStore::Inited(pool) => Ok(PostgresStore::Inited(pool)),
             }
         })
     }

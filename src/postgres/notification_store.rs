@@ -53,8 +53,11 @@ impl DataStore<NotificationData> for PostgresNotificationStore {
             let store = store.read().await;
             match &*store {
                 PostgresStore::Created(_) => Err(JobSchedulerError::GetJobData),
-                PostgresStore::Inited(store) => {
-                    let store = store.read().await;
+                PostgresStore::Inited(pool) => {
+                    let store = pool.get().await.map_err(|e| {
+                        error!("Error getting postgres client {:?}", e);
+                        JobSchedulerError::GetJobData
+                    })?;
                     let sql =
                         "SELECT id, job_id, extra from ".to_string() + &*table + " where id = $1";
                     let row = store.query(&*sql, &[&id]).await;
@@ -120,8 +123,11 @@ impl DataStore<NotificationData> for PostgresNotificationStore {
             let store = store.read().await;
             match &*store {
                 PostgresStore::Created(_) => Err(JobSchedulerError::UpdateJobData),
-                PostgresStore::Inited(store) => {
-                    let store = store.read().await;
+                PostgresStore::Inited(pool) => {
+                    let store = pool.get().await.map_err(|e| {
+                        error!("Error getting postgres client {:?}", e);
+                        JobSchedulerError::UpdateJobData
+                    })?;
                     let (job_id, notification_id) =
                         match data.job_id_and_notification_id_from_data() {
                             Some((job_id, notification_id)) => (job_id, notification_id),
@@ -182,8 +188,11 @@ impl DataStore<NotificationData> for PostgresNotificationStore {
             let store = store.read().await;
             match &*store {
                 PostgresStore::Created(_) => Err(JobSchedulerError::CantRemove),
-                PostgresStore::Inited(store) => {
-                    let store = store.read().await;
+                PostgresStore::Inited(pool) => {
+                    let store = pool.get().await.map_err(|e| {
+                        error!("Error getting postgres client {:?}", e);
+                        JobSchedulerError::CantRemove
+                    })?;
                     let sql = "DELETE FROM ".to_string() + &*table + " WHERE id = $1";
                     store.query(&*sql, &[&guid]).await.map(|_| ()).map_err(|e| {
                         error!("Error deleting notification {:?}", e);
@@ -212,8 +221,11 @@ impl InitStore for PostgresNotificationStore {
                 match val {
                     Ok(v) => {
                         if init_tables {
-                            if let PostgresStore::Inited(client) = &v {
-                                let v = client.read().await;
+                            if let PostgresStore::Inited(pool) = &v {
+                                let v = pool.get().await.map_err(|e| {
+                                    error!("Error getting postgres client {:?}", e);
+                                    JobSchedulerError::CantInit
+                                })?;
 
                                 let sql = "CREATE TABLE IF NOT EXISTS ".to_string()
                                     + &*table
@@ -281,8 +293,11 @@ impl NotificationStore for PostgresNotificationStore {
             let store = store.read().await;
             match &*store {
                 PostgresStore::Created(_) => Err(JobSchedulerError::CantListGuids),
-                PostgresStore::Inited(store) => {
-                    let store = store.read().await;
+                PostgresStore::Inited(pool) => {
+                    let store = pool.get().await.map_err(|e| {
+                        error!("Error getting postgres client {:?}", e);
+                        JobSchedulerError::CantListGuids
+                    })?;
                     let state = state as i32;
                     let sql = "SELECT DISTINCT states.id \
                     FROM \
@@ -326,8 +341,11 @@ impl NotificationStore for PostgresNotificationStore {
             let store = store.read().await;
             match &*store {
                 PostgresStore::Created(_) => Err(JobSchedulerError::CantListGuids),
-                PostgresStore::Inited(store) => {
-                    let store = store.read().await;
+                PostgresStore::Inited(pool) => {
+                    let store = pool.get().await.map_err(|e| {
+                        error!("Error getting postgres client {:?}", e);
+                        JobSchedulerError::CantListGuids
+                    })?;
                     let sql =
                         "SELECT DISTINCT id FROM ".to_string() + &*table + " WHERE job_id = $1";
                     let result = store.query(&*sql, &[&job_id]).await;
@@ -364,8 +382,11 @@ impl NotificationStore for PostgresNotificationStore {
             let store = store.read().await;
             match &*store {
                 PostgresStore::Created(_) => Err(JobSchedulerError::CantRemove),
-                PostgresStore::Inited(store) => {
-                    let store = store.read().await;
+                PostgresStore::Inited(pool) => {
+                    let store = pool.get().await.map_err(|e| {
+                        error!("Error getting postgres client {:?}", e);
+                        JobSchedulerError::CantRemove
+                    })?;
                     let state = state as i32;
                     let sql = "DELETE FROM ".to_string()
                         + &*states_table
@@ -398,8 +419,11 @@ impl NotificationStore for PostgresNotificationStore {
             let store = store.read().await;
             match &*store {
                 PostgresStore::Created(_) => Err(JobSchedulerError::CantRemove),
-                PostgresStore::Inited(store) => {
-                    let store = store.read().await;
+                PostgresStore::Inited(pool) => {
+                    let store = pool.get().await.map_err(|e| {
+                        error!("Error getting postgres client {:?}", e);
+                        JobSchedulerError::CantRemove
+                    })?;
                     let sql = "DELETE FROM ".to_string() + &*table + " WHERE job_id = $1";
                     store
                         .query(&*sql, &[&job_id])

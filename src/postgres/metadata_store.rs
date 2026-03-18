@@ -50,8 +50,11 @@ impl DataStore<JobStoredData> for PostgresMetadataStore {
             let store = store.read().await;
             match &*store {
                 PostgresStore::Created(_) => Err(JobSchedulerError::GetJobData),
-                PostgresStore::Inited(store) => {
-                    let store = store.read().await;
+                PostgresStore::Inited(pool) => {
+                    let store = pool.get().await.map_err(|e| {
+                        error!("Error getting postgres client {:?}", e);
+                        JobSchedulerError::GetJobData
+                    })?;
                     let sql = "select \
                         id, last_updated, next_tick, last_tick, job_type, count, \
                         ran, stopped, schedule, repeating, repeated_every, \
@@ -85,9 +88,12 @@ impl DataStore<JobStoredData> for PostgresMetadataStore {
             let store = store.read().await;
             match &*store {
                 PostgresStore::Created(_) => Err(JobSchedulerError::UpdateJobData),
-                PostgresStore::Inited(store) => {
+                PostgresStore::Inited(pool) => {
                     let uuid: Uuid = data.id.as_ref().unwrap().into();
-                    let store = store.read().await;
+                    let store = pool.get().await.map_err(|e| {
+                        error!("Error getting postgres client {:?}", e);
+                        JobSchedulerError::UpdateJobData
+                    })?;
                     let sql = "INSERT INTO ".to_string()
                         + &*table
                         + " (\
@@ -172,8 +178,11 @@ impl DataStore<JobStoredData> for PostgresMetadataStore {
             let store = store.read().await;
             match &*store {
                 PostgresStore::Created(_) => Err(JobSchedulerError::CantRemove),
-                PostgresStore::Inited(store) => {
-                    let store = store.read().await;
+                PostgresStore::Inited(pool) => {
+                    let store = pool.get().await.map_err(|e| {
+                        error!("Error getting postgres client {:?}", e);
+                        JobSchedulerError::CantRemove
+                    })?;
                     let sql = "DELETE FROM ".to_string() + &*table + " WHERE id = $1";
                     let val = store.query(&*sql, &[&guid]).await;
                     match val {
@@ -268,8 +277,11 @@ impl InitStore for PostgresMetadataStore {
                 match val {
                     Ok(v) => {
                         if init_tables {
-                            if let PostgresStore::Inited(client) = &v {
-                                let v = client.read().await;
+                            if let PostgresStore::Inited(pool) = &v {
+                                let v = pool.get().await.map_err(|e| {
+                                    error!("Error getting postgres client {:?}", e);
+                                    JobSchedulerError::CantInit
+                                })?;
                                 let sql = "CREATE TABLE IF NOT EXISTS ".to_string()
                                     + &*table
                                     + " (\
@@ -329,8 +341,11 @@ impl MetaDataStorage for PostgresMetadataStore {
             let store = store.read().await;
             match &*store {
                 PostgresStore::Created(_) => Err(JobSchedulerError::CantListNextTicks),
-                PostgresStore::Inited(store) => {
-                    let store = store.read().await;
+                PostgresStore::Inited(pool) => {
+                    let store = pool.get().await.map_err(|e| {
+                        error!("Error getting postgres client {:?}", e);
+                        JobSchedulerError::CantListNextTicks
+                    })?;
                     let now = Utc::now().timestamp();
                     let sql = "SELECT \
                             id, job_type, next_tick, last_tick \
@@ -387,8 +402,11 @@ impl MetaDataStorage for PostgresMetadataStore {
             let store = store.read().await;
             match &*store {
                 PostgresStore::Created(_) => Err(JobSchedulerError::UpdateJobData),
-                PostgresStore::Inited(store) => {
-                    let store = store.read().await;
+                PostgresStore::Inited(pool) => {
+                    let store = pool.get().await.map_err(|e| {
+                        error!("Error getting postgres client {:?}", e);
+                        JobSchedulerError::UpdateJobData
+                    })?;
                     let next_tick = next_tick.map(|b| b.timestamp()).unwrap_or(0);
                     let last_tick = last_tick.map(|b| b.timestamp());
                     let sql = "UPDATE ".to_string()
@@ -419,8 +437,11 @@ impl MetaDataStorage for PostgresMetadataStore {
             let store = store.read().await;
             match &*store {
                 PostgresStore::Created(_) => Err(JobSchedulerError::CouldNotGetTimeUntilNextTick),
-                PostgresStore::Inited(store) => {
-                    let store = store.read().await;
+                PostgresStore::Inited(pool) => {
+                    let store = pool.get().await.map_err(|e| {
+                        error!("Error getting postgres client {:?}", e);
+                        JobSchedulerError::CouldNotGetTimeUntilNextTick
+                    })?;
                     let now = Utc::now().timestamp();
                     let sql = "SELECT \
                             next_tick \
