@@ -5,9 +5,10 @@ use crate::JobSchedulerError;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio_postgres::{Client, NoTls};
-use tracing::error;
+use tracing::{error, info, warn};
 
 pub use metadata_store::PostgresMetadataStore;
 pub use notification_store::PostgresNotificationStore;
@@ -21,6 +22,22 @@ pub enum PostgresStore {
 impl PostgresStore {
     pub fn inited(&self) -> bool {
         matches!(self, PostgresStore::Inited(_))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::PostgresStore;
+    use std::time::Duration;
+
+    #[test]
+    fn reconnect_backoff_caps() {
+        assert_eq!(PostgresStore::retry_backoff(0), Duration::from_secs(1));
+        assert_eq!(PostgresStore::retry_backoff(1), Duration::from_secs(2));
+        assert_eq!(PostgresStore::retry_backoff(2), Duration::from_secs(4));
+        assert_eq!(PostgresStore::retry_backoff(3), Duration::from_secs(8));
+        assert_eq!(PostgresStore::retry_backoff(4), Duration::from_secs(16));
+        assert_eq!(PostgresStore::retry_backoff(10), Duration::from_secs(16));
     }
 }
 
@@ -69,33 +86,93 @@ impl Default for PostgresStore {
 }
 
 impl PostgresStore {
+    async fn connect(
+        url: &str,
+    ) -> Result<
+        (
+            Client,
+            Pin<Box<dyn Future<Output = Result<(), tokio_postgres::Error>> + Send>>,
+        ),
+        tokio_postgres::Error,
+    > {
+        #[cfg(feature = "postgres-openssl")]
+        let tls = postgres_openssl::TlsConnector;
+        #[cfg(feature = "postgres-native-tls")]
+        let tls = postgres_native_tls::TlsConnector;
+        #[cfg(not(any(feature = "postgres-native-tls", feature = "postgres-openssl")))]
+        let tls = NoTls;
+
+        let (client, connection) = tokio_postgres::connect(url, tls).await?;
+        Ok((client, Box::pin(connection)))
+    }
+
+    fn retry_backoff(attempt: u32) -> Duration {
+        let secs = 2_u64.saturating_pow(attempt.min(4));
+        Duration::from_secs(secs)
+    }
+
+    fn spawn_connection_task(
+        url: String,
+        client_ref: Arc<RwLock<Client>>,
+        mut connection: Pin<Box<dyn Future<Output = Result<(), tokio_postgres::Error>> + Send>>,
+    ) {
+        tokio::spawn(async move {
+            let mut attempt = 0_u32;
+            loop {
+                match connection.await {
+                    Ok(_) => {
+                        warn!("Postgres connection task ended unexpectedly");
+                    }
+                    Err(e) => {
+                        error!("Error with Postgres Connection {:?}", e);
+                    }
+                }
+
+                let sleep_duration = Self::retry_backoff(attempt);
+                warn!(
+                    ?sleep_duration,
+                    "Trying to reconnect to Postgres after connection loss"
+                );
+                tokio::time::sleep(sleep_duration).await;
+
+                connection = loop {
+                    match Self::connect(&url).await {
+                        Ok((client, next_connection)) => {
+                            {
+                                let mut writer = client_ref.write().await;
+                                *writer = client;
+                            }
+                            attempt = 0;
+                            info!("Reconnected to Postgres");
+                            break next_connection;
+                        }
+                        Err(e) => {
+                            attempt = attempt.saturating_add(1);
+                            error!("Error reconnecting to postgres {:?}", e);
+                            let sleep_duration = Self::retry_backoff(attempt);
+                            tokio::time::sleep(sleep_duration).await;
+                        }
+                    }
+                };
+            }
+        });
+    }
+
     pub fn init(
         self,
     ) -> Pin<Box<dyn Future<Output = Result<PostgresStore, JobSchedulerError>> + Send>> {
         Box::pin(async move {
             match self {
                 PostgresStore::Created(url) => {
-                    #[cfg(feature = "postgres-openssl")]
-                    let tls = postgres_openssl::TlsConnector;
-                    #[cfg(feature = "postgres-native-tls")]
-                    let tls = postgres_native_tls::TlsConnector;
-                    #[cfg(not(any(
-                        feature = "postgres-native-tls",
-                        feature = "postgres-openssl"
-                    )))]
-                    let tls = NoTls;
-                    let connect = tokio_postgres::connect(&*url, tls).await;
+                    let connect = Self::connect(&url).await;
                     if let Err(e) = connect {
                         error!("Error connecting to postgres {:?}", e);
                         return Err(JobSchedulerError::CantInit);
                     }
                     let (client, connection) = connect.unwrap();
-                    tokio::spawn(async move {
-                        if let Err(e) = connection.await {
-                            error!("Error with Postgres Connection {:?}", e);
-                        }
-                    });
-                    Ok(PostgresStore::Inited(Arc::new(RwLock::new(client))))
+                    let client_ref = Arc::new(RwLock::new(client));
+                    Self::spawn_connection_task(url, client_ref.clone(), connection);
+                    Ok(PostgresStore::Inited(client_ref))
                 }
                 PostgresStore::Inited(client) => Ok(PostgresStore::Inited(client)),
             }

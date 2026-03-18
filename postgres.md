@@ -29,6 +29,10 @@ docker run --rm -it -p 5432:5432 -e POSTGRES_USER="postgres" -e POSTGRES_PASSWOR
 Both PostgresMetadataStore and PostgresNotificationStore encapsulates a PostgresStore, which in
 turn encapsulates a Tokio Postgres Client. Override accordingly.
 
+> `PostgresStore` keeps a background connection task alive. If the server connection is dropped,
+> it will automatically retry with backoff and swap in a new client once PostgreSQL is reachable
+> again.
+
 ### Other options
 
  Environment Variable               | Default            | Description                                                                                                           
@@ -38,4 +42,3 @@ turn encapsulates a Tokio Postgres Client. Override accordingly.
  POSTGRES_INIT_NOTIFICATIONS        |                    | If set to 'true', the notification tables will be created on PostgresNotificationStore initizalization.               
  POSTGRES_NOTIFICATION_TABLE        | notification       | The table to hold the main notification data used by PostgresNotificationStore                                        
  POSTGRES_NOTIFICATION_STATES_TABLE | notification_state | The table to hold the states types vs notification id table. A 1:N relationship with the POSTGRES_NOTIFICATION_TABLE. 
-
