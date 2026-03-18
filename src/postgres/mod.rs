@@ -138,10 +138,8 @@ impl PostgresStore {
                 connection = loop {
                     match Self::connect(&url).await {
                         Ok((client, next_connection)) => {
-                            {
-                                let mut writer = client_ref.write().await;
-                                *writer = client;
-                            }
+                            let mut writer = client_ref.write().await;
+                            *writer = client;
                             attempt = 0;
                             info!("Reconnected to Postgres");
                             break next_connection;

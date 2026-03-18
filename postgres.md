@@ -39,6 +39,6 @@ turn encapsulates a Tokio Postgres Client. Override accordingly.
 ------------------------------------|--------------------|-----------------------------------------------------------------------------------------------------------------------
  POSTGRES_INIT_METADATA             |                    | If set to 'true', the metadata table will be created on PostgresMetadataStore initialization.                         
  POSTGRES_METADATA_TABLE            | job                | The metadata table name used by the PostgresMetadataStore.                                                            
- POSTGRES_INIT_NOTIFICATIONS        |                    | If set to 'true', the notification tables will be created on PostgresNotificationStore initizalization.               
+ POSTGRES_INIT_NOTIFICATIONS        |                    | If set to 'true', the notification tables will be created on PostgresNotificationStore initialization.               
  POSTGRES_NOTIFICATION_TABLE        | notification       | The table to hold the main notification data used by PostgresNotificationStore                                        
  POSTGRES_NOTIFICATION_STATES_TABLE | notification_state | The table to hold the states types vs notification id table. A 1:N relationship with the POSTGRES_NOTIFICATION_TABLE. 
