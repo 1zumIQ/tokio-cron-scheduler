@@ -1,10 +1,9 @@
 use crate::JobSchedulerError;
-use crate::job::JobToRunAsync;
 #[cfg(not(feature = "has_bytes"))]
 use crate::job::job_data::{JobAndNextTick, JobStoredData};
 #[cfg(feature = "has_bytes")]
 use crate::job::job_data_prost::{JobAndNextTick, JobStoredData};
-use crate::store::{CodeGet, DataStore, InitStore};
+use crate::store::{DataStore, InitStore};
 use chrono::{DateTime, Utc};
 use std::future::Future;
 use std::pin::Pin;
@@ -24,5 +23,3 @@ pub trait MetaDataStorage: DataStore<JobStoredData> + InitStore {
         &mut self,
     ) -> Pin<Box<dyn Future<Output = Result<Option<std::time::Duration>, JobSchedulerError>> + Send>>;
 }
-
-pub trait JobCodeGet: CodeGet<Box<JobToRunAsync>> {}

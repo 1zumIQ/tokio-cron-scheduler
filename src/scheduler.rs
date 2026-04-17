@@ -35,6 +35,19 @@ impl Default for Scheduler {
 }
 
 impl Scheduler {
+    /// Decode persisted job type values across protobuf-backed and legacy payloads.
+    fn decode_job_type(job_type: i32) -> Option<JobType> {
+        #[cfg(feature = "has_bytes")]
+        {
+            JobType::try_from(job_type).ok()
+        }
+
+        #[cfg(not(feature = "has_bytes"))]
+        {
+            JobType::from_i32(job_type)
+        }
+    }
+
     pub async fn init(&mut self, context: &Context) {
         if self.inited {
             return;
@@ -116,7 +129,7 @@ impl Scheduler {
                 let must_runs = next_ticks.iter().filter_map(|n| {
                     let next_tick = n.next_tick_utc();
                     let last_tick = n.last_tick_utc();
-                    let job_type: JobType = JobType::from_i32(n.job_type).unwrap();
+                    let job_type = Self::decode_job_type(n.job_type).unwrap();
 
                     let must_run = match (last_tick.as_ref(), next_tick.as_ref(), job_type) {
                         (None, Some(next_tick), JobType::OneShot) => {
@@ -178,7 +191,7 @@ impl Scheduler {
 
                         let next_and_last_tick = match job {
                             Ok(Some(job)) => {
-                                let job_type: JobType = JobType::from_i32(job.job_type).unwrap();
+                                let job_type = Self::decode_job_type(job.job_type).unwrap();
                                 let schedule = job.schedule();
                                 let fixed_offset = FixedOffset::east_opt(job.time_offset_seconds)
                                     .unwrap_or(FixedOffset::east_opt(0).unwrap());
