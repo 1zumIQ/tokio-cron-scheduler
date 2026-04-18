@@ -1,0 +1,2 @@
+# Keep the checked-in prost output stable across Windows builds.
+src/job/job_data_prost.rs text eol=lf
